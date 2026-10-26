@@ -1,0 +1,264 @@
+//this project is a simple OpenGL project that simulates rolling a dice.
+//SPACE or Left Click to roll the dice, ESC to exit simulation
+// Made by: Mayar Alharbi.
+#include <GL/freeglut.h>
+#include <cmath>
+#include <cstdlib>
+#include <ctime>
+#include <string>
+
+const float PI = 3.14159265f;
+const float ROLL_TIME = 2.5f;   
+
+bool  rolling = false;
+float startTime = 0.0f;
+int   result = 1;
+
+float tgtRx = 0, tgtRz = 0, tgtYaw = 30;
+
+float spinX = 0, spinY = 0, spinZ = 0;
+
+float curRx = 0, curRy = 30, curRz = 0, curH = 0;
+
+int winW = 800, winH = 600;
+
+
+void faceTarget(int n, float& rx, float& rz)
+{
+    rx = 0; rz = 0;
+    switch (n) {
+    case 1: break;
+    case 6: rx = 180; break;
+    case 3: rz = 90; break;
+    case 4: rz = -90; break;
+    case 2: rx = -90; break;
+    case 5: rx = 90; break;
+    }
+}
+
+void startRoll()
+{
+    result = rand() % 6 + 1;
+    faceTarget(result, tgtRx, tgtRz);
+    tgtYaw = (float)(rand() % 360);
+
+    auto randSpin = []() {
+        float turns = (float)(2 + rand() % 4);       
+        return turns * 360.0f * ((rand() % 2) ? 1.0f : -1.0f);
+        };
+    spinX = randSpin();
+    spinY = randSpin();
+    spinZ = randSpin();
+
+    startTime = glutGet(GLUT_ELAPSED_TIME) / 1000.0f;
+    rolling = true;
+}
+
+void updateState()
+{
+    if (!rolling) {
+        curRx = tgtRx; curRy = tgtYaw; curRz = tgtRz; curH = 0;
+        return;
+    }
+    float t = (glutGet(GLUT_ELAPSED_TIME) / 1000.0f - startTime) / ROLL_TIME;
+    if (t >= 1.0f) { t = 1.0f; rolling = false; }
+
+    float k = powf(1.0f - t, 3.0f);                  
+    curRx = tgtRx + spinX * k;
+    curRy = tgtYaw + spinY * k;
+    curRz = tgtRz + spinZ * k;
+
+    float u = 1.0f - t;
+    curH = 2.0f * u * u * fabsf(sinf(3.0f * PI * t)) + 0.7f * sinf(PI * t);
+}
+
+void drawDisc(float x, float y, float z, float r)
+{
+    glBegin(GL_TRIANGLE_FAN);
+    glNormal3f(0, 0, 1);
+    glVertex3f(x, y, z);
+    for (int i = 0; i <= 24; i++) {
+        float a = 2.0f * PI * i / 24.0f;
+        glVertex3f(x + r * cosf(a), y + r * sinf(a), z);
+    }
+    glEnd();
+}
+
+void drawPips(int n)
+{
+    static const float p = 0.5f;
+    static const float pos[7][6][2] = {
+        {},
+        { { 0, 0 } },
+        { { -p, p },{ p, -p } },
+        { { -p, p },{ 0, 0 },{ p, -p } },
+        { { -p, p },{ p, p },{ -p, -p },{ p, -p } },
+        { { -p, p },{ p, p },{ 0, 0 },{ -p, -p },{ p, -p } },
+        { { -p, p },{ p, p },{ -p, 0 },{ p, 0 },{ -p, -p },{ p, -p } }
+    };
+    if (n == 1) glColor3f(0.8f, 0.1f, 0.1f); else glColor3f(0.05f, 0.05f, 0.05f);
+    for (int i = 0; i < n; i++)
+        drawDisc(pos[n][i][0], pos[n][i][1], 1.005f, n == 1 ? 0.28f : 0.18f);
+}
+
+void drawDice()
+{
+    glColor3f(0.96f, 0.95f, 0.9f);
+    glutSolidCube(2.0);
+
+    struct F { int n; float ang; float x, y, z; };
+    const F faces[6] = {
+        { 2,   0, 0, 1, 0 },   
+        { 5, 180, 0, 1, 0 },   
+        { 3,  90, 0, 1, 0 },   
+        { 4, -90, 0, 1, 0 },   
+        { 1, -90, 1, 0, 0 },   
+        { 6,  90, 1, 0, 0 }    
+    };
+    for (int i = 0; i < 6; i++) {
+        glPushMatrix();
+        glRotatef(faces[i].ang, faces[i].x, faces[i].y, faces[i].z);
+        drawPips(faces[i].n);
+        glPopMatrix();
+    }
+}
+
+void drawTable()
+{
+    glColor3f(0.05f, 0.35f, 0.15f);
+    glBegin(GL_QUADS);
+    glNormal3f(0, 1, 0);
+    glVertex3f(-8, -1, -8);
+    glVertex3f(-8, -1, 8);
+    glVertex3f(8, -1, 8);
+    glVertex3f(8, -1, -8);
+    glEnd();
+}
+
+void drawShadow(float h)
+{
+    glDisable(GL_LIGHTING);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glColor4f(0, 0, 0, 0.45f / (1.0f + h));
+    float r = 1.5f / (1.0f + 0.2f * h);
+    glBegin(GL_TRIANGLE_FAN);
+    glVertex3f(0, -0.99f, 0);
+    for (int i = 0; i <= 32; i++) {
+        float a = 2.0f * PI * i / 32.0f;
+        glVertex3f(r * cosf(a), -0.99f, r * sinf(a));
+    }
+    glEnd();
+    glDisable(GL_BLEND);
+    glEnable(GL_LIGHTING);
+}
+
+void drawHUD()
+{
+    glDisable(GL_LIGHTING);
+    glDisable(GL_DEPTH_TEST);
+    glMatrixMode(GL_PROJECTION);
+    glPushMatrix();
+    glLoadIdentity();
+    gluOrtho2D(0, winW, 0, winH);
+    glMatrixMode(GL_MODELVIEW);
+    glPushMatrix();
+    glLoadIdentity();
+
+    std::string s = rolling ? "Rolling..."
+        : "Result: " + std::to_string(result) + "    (Press SPACE or Click to roll!)";
+    glColor3f(1, 1, 1);
+    glRasterPos2i(15, 15);
+    glutBitmapString(GLUT_BITMAP_HELVETICA_18, (const unsigned char*)s.c_str());
+
+    glPopMatrix();
+    glMatrixMode(GL_PROJECTION);
+    glPopMatrix();
+    glMatrixMode(GL_MODELVIEW);
+    glEnable(GL_DEPTH_TEST);
+    glEnable(GL_LIGHTING);
+}
+
+void display()
+{
+    glClearColor(0.1f, 0.12f, 0.18f, 1);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();
+    gluLookAt(0, 7, 7, 0, 0, 0, 0, 1, 0);
+
+    GLfloat lightPos[] = { 3.0f, 8.0f, 5.0f, 1.0f };
+    glLightfv(GL_LIGHT0, GL_POSITION, lightPos);
+
+    drawTable();
+    drawShadow(curH);
+
+    glPushMatrix();
+    glTranslatef(0, curH, 0);
+    glRotatef(curRy, 0, 1, 0);   
+    glRotatef(curRx, 1, 0, 0);
+    glRotatef(curRz, 0, 0, 1);   
+    drawDice();
+    glPopMatrix();
+
+    drawHUD();
+    glutSwapBuffers();
+}
+
+void reshape(int w, int h)
+{
+    if (h == 0) h = 1;
+    winW = w; winH = h;
+    glViewport(0, 0, w, h);
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+    gluPerspective(45.0, (double)w / h, 0.1, 100.0);
+    glMatrixMode(GL_MODELVIEW);
+}
+
+void timer(int)
+{
+    updateState();
+    glutPostRedisplay();
+    glutTimerFunc(16, timer, 0);
+}
+
+void keyboard(unsigned char key, int, int)
+{
+    if (key == 27) exit(0);
+    if (key == ' ' && !rolling) startRoll();
+}
+
+void mouse(int button, int state, int, int)
+{
+    if (button == GLUT_LEFT_BUTTON && state == GLUT_DOWN && !rolling) startRoll();
+}
+
+int main(int argc, char** argv)
+{
+    srand((unsigned)time(nullptr));
+    faceTarget(result, tgtRx, tgtRz);
+
+    glutInit(&argc, argv);
+    glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB | GLUT_DEPTH);
+    glutInitWindowSize(winW, winH);
+    glutCreateWindow("Dice Rolling Simulation");
+
+    glEnable(GL_DEPTH_TEST);
+    glEnable(GL_LIGHTING);
+    glEnable(GL_LIGHT0);
+    glEnable(GL_COLOR_MATERIAL);
+    glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE);
+    glEnable(GL_NORMALIZE);
+    glShadeModel(GL_SMOOTH);
+
+    glutDisplayFunc(display);
+    glutReshapeFunc(reshape);
+    glutKeyboardFunc(keyboard);
+    glutMouseFunc(mouse);
+    glutTimerFunc(16, timer, 0);
+
+    glutMainLoop();
+    return 0;
+}
